@@ -1,3 +1,8 @@
+---
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
 #SIMULAÇÃO DE DIFERENTES MECANISMOS DE DADOS FALTANTES EM UMA MESMA BASE DE DADOS E AVALIAÇÃO DE COMO DIFERENTES MECANISMOS AFETAM A BASE
 
 ##Objetivo:
