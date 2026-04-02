@@ -1,0 +1,459 @@
+---
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+#SIMULAÇÃO DE DIFERENTES MECANISMOS DE DADOS FALTANTES EM UMA MESMA BASE DE DADOS E AVALIAÇÃO DE COMO DIFERENTES MECANISMOS AFETAM A BASE
+
+##Objetivo:
+Simular diferentes mecanismos de dados faltantes (MCAR, MAR e MNAR) na base Equipment (ZELLNER; RYU, 1998), de forma controlada, para posterior análise e comparação de como diferentes mecanismos afetam a base original.
+
+
+##Metodologia das simulações:
+
+###Contextualização: 
+Os problemas relacionados a dados faltantes podem ser classificados em três categorias fundamentais. Segundo van Buuren (2018), "em sua teoria, todo ponto de dados tem alguma probabilidade de estar ausente. O processo que governa essas probabilidades é chamado de mecanismo de dados faltantes ou mecanismo de resposta" (tradução livre, p. 8). Essa classificação é essencial para compreender como os dados ausentes podem afetar as análises estatísticas.
+
+A primeira categoria é o Missing Completely at Random (MCAR). Neste caso, a probabilidade de um dado estar ausente é a mesma para todos os casos, independentemente de qualquer variável observada ou não observada. Embora seja um cenário conveniente do ponto de vista analítico, sua ocorrência na prática é rara, pois pressupõe que a ausência de dados ocorre de forma totalmente aleatória.
+
+A segunda categoria é o Missing at Random (MAR). Aqui, a probabilidade de um dado ser ausente é a mesma apenas dentro de grupos definidos por variáveis observadas. Isso significa que, controladas as variáveis disponíveis, a ausência ocorre de forma aleatória. Esta categoria é considerada mais factível em situações reais e serve como pressuposto para muitos métodos desenvolvidos recentemente para lidar com dados faltantes.
+
+A terceira e mais complexa categoria é o Missing Not at Random (MNAR) ou Non-Missing at Random (NMAR). Neste cenário, a probabilidade de um dado estar ausente varia por motivos desconhecidos ou relacionados ao próprio valor ausente. Como observa van Buuren (2018), "as estratégias para lidar com dados faltantes (MNAR, na sigla em inglês) consistem em encontrar mais dados sobre as causas da ausência de informações ou em realizar análises de hipóteses para verificar a sensibilidade dos resultados em diferentes cenários" (tradução livre, p. 9). Trata-se do caso mais desafiador, pois requer abordagens mais sofisticadas para minimizar possíveis vieses nas análises.
+
+Dessa forma, dada as explicações dos conceitos de MCAR, MAR e MNAR, parte-se para a prática.
+
+###Simulações
+
+Visando a extração dos dados existentes de forma completamente aleatória (MCAR), aleatória (MAR) e não aleatória (MNAR), são necessário os seguintes passos:
+
+Exportação dos dados da base e checagem análise do resumo estatístico (skim).
+```{r}
+library(tidyverse)
+library(skimr)
+```
+
+```{r}
+equipment <- read.csv("~/R/imputacao/Equipment.csv", sep = ",", na.strings = "")
+
+View(equipment)
+skim(equipment)
+```
+
+Simulação dos mecanismos de missing. Serão simulados três cenários:
+
+1. MCAR: aleatório;
+2. MAR: depende de capital para dados faltantes em valueadded (depende de outra variável);
+3. MNAR: depende de valueadded para dados faltantes em valueadded (depende da própria variável).
+
+####1. Simulação MCAR:
+```{r}
+set.seed(123) # sorteio aleatório reprodutível
+
+equip_mcar <- equipment # réplica da base de dados para realizar o mcar
+
+p_mcar <- 0.4 # estipulando 40% de dados faltantes em cada coluna
+
+id <- sample(1:nrow(equip_mcar), size = floor(p_mcar * nrow(equip_mcar))) 
+
+equip_mcar$valueadded[id] <- NA # preenchendo com NAs
+
+View(equip_mcar)
+skim(equip_mcar)
+```
+Esse código: 
+
+- Seleciona aleatoriamente 40% das observações
+- Substitui por NA em valueadded
+
+Assim, a ausência de dados é totalmente independente das variáveis observadas ou não observadas, característica de dados faltantes MCAR.
+
+####2. Simulação MAR:
+```{r}
+set.seed(123)
+
+equip_mar <- equipment # réplica da base de dados para realizar o mar
+
+prob_mar <- pnorm(scale(equip_mar$capital)) # padronização da variável capital e transformá-la em probabilidade entre 0 e 1
+
+p_mar <- 0.4
+
+prob_mar <- prob_mar / mean(prob_mar) * p_mar # ajustar para ter média para aproximadamente 40%
+
+prob_mar[prob_mar > 1] <- 1 # garantir que não passe de 1 (prob entre 0 e 1)
+
+miss_mar <- runif(nrow(equip_mar)) < prob_mar # gerar aleatoriedade e decide que terá NA de acordo com a condição estipulada
+
+equip_mar$valueadded[miss_mar] <- NA # 
+
+View(equip_mar)
+skim(equip_mar)
+```
+
+Esse código:
+
+- Faz com que observações com maior capital têm maior chance de missing
+- A probabilidade varia entre indivíduos
+
+Dessa forma, a ausência depende de uma variável observada (capital), mas não da variável que será imputada (valueadded), característica de dados faltantes MAR.
+
+####3. Simulação MNAR/NMAR:
+```{r}
+set.seed(123)
+
+equip_mnar <- equipment # réplica da base de dados para realizar o mnar
+
+prob_mnar <- pnorm(scale(equip_mnar$valueadded)) # padronização da variável valueadded e e transformá-la em probabilidade entre 0 e 1
+
+p_mnar <- 0.4
+
+prob_mnar <- prob_mnar / mean(prob_mnar) * p_mnar # ajustar para ter média para aproximadamente 40%
+
+prob_mnar[prob_mnar > 1] <- 1 # garantir que não passe de 1 (prob entre 0 e 1)
+
+miss_mnar <- runif(nrow(equip_mnar)) < prob_mnar # gerar aleatoriedade e decide que terá NA de acordo com a condição estipulada
+
+equip_mnar$valueadded[miss_mnar] <- NA
+
+View(equip_mnar)
+skim(equip_mnar)
+```
+Esse código:
+
+- Faz com que valores altos de valueadded têm maior chance de desaparecer
+- O mecanismo depende da própria variável que se torna faltante
+
+Portanto, a ausência depende da variável que será imputada (valueadded), característica de dados faltantes MNAR. Como depende do próprio valor não observado, o problema torna-se mais complexo.
+
+
+###Conclusão metodológica:
+
+O código implementa, de forma estruturada, três mecanismos clássicos de dados faltantes:
+
+- MCAR: ausência completamente aleatória
+- MAR: ausência dependente de variáveis observadas
+- MNAR: ausência dependente do próprio valor
+
+A utilização de funções como scale(), pnorm() e runif() permite modelar probabilisticamente o processo de missing, garantindo maior veracidade nos cenários simulados.
+
+Além disso, o ajuste das probabilidades assegura comparabilidade entre os diferentes mecanismos, o que será essencial para as próximas análises.
+
+
+## Análises e comparações:
+Objetivando comparar como diferentes mecanismos de dados faltantes (MCAR, MAR, MNAR) afetam estimativas, variabilidade, inferência estatística e qualidade dos modelos, é necessário fazer o seguinte:
+
+###Análise descritiva:
+Será calculado:
+
+- média (para verificar o valor médio dos dados)
+- mediana (para verificar o valor central (percentil 50))
+- desvio padrão (para verificar a variabilidade dos dados)
+- correlação das 04 bases de dados (original e as 03 simulações) (para verificar se a relação entre variáveis foi distorcida pelos dados faltantes)
+
+Calcula-se da seguinte forma:
+```{r}
+analises <- data.frame(
+  operacao = character(0),
+  equipment = numeric(0),
+  equip_mcar = numeric(0),
+  equip_mar = numeric(0),
+  equip_mnar = numeric(0),
+  stringsAsFactors = FALSE
+)
+
+# média
+analises <- rbind(analises, data.frame(
+  operacao = "media",
+  equipment = round(mean(equipment$valueadded, na.rm = TRUE), 4),
+  equip_mcar = round(mean(equip_mcar$valueadded, na.rm = TRUE), 4),
+  equip_mar = round(mean(equip_mar$valueadded, na.rm = TRUE), 4),
+  equip_mnar = round(mean(equip_mnar$valueadded, na.rm = TRUE), 4)
+))
+
+# mediana
+analises <- rbind(analises, data.frame(
+  operacao = "mediana",
+  equipment = round(median(equipment$valueadded, na.rm = TRUE), 4),
+  equip_mcar = round(median(equip_mcar$valueadded, na.rm = TRUE), 4),
+  equip_mar = round(median(equip_mar$valueadded, na.rm = TRUE), 4),
+  equip_mnar = round(median(equip_mnar$valueadded, na.rm = TRUE), 4)
+))
+
+# desvio padrão
+analises <- rbind(analises, data.frame(
+  operacao = "desvio_padrao",
+  equipment = round(sd(equipment$valueadded, na.rm = TRUE), 4),
+  equip_mcar = round(sd(equip_mcar$valueadded, na.rm = TRUE), 4),
+  equip_mar = round(sd(equip_mar$valueadded, na.rm = TRUE), 4),
+  equip_mnar = round(sd(equip_mnar$valueadded, na.rm = TRUE), 4)
+))
+
+# correlação
+analises <- rbind(analises, data.frame(
+  operacao = "correlacao",
+  equipment = round(cor(equipment$capital, equipment$valueadded, use = "complete.obs"), 4),
+  equip_mcar = round(cor(equip_mcar$capital, equip_mcar$valueadded, use = "complete.obs"), 4),
+  equip_mar = round(cor(equip_mar$capital, equip_mar$valueadded, use = "complete.obs"), 4),
+  equip_mnar = round(cor(equip_mnar$capital, equip_mnar$valueadded, use = "complete.obs"), 4)
+))
+
+
+View(analises)
+```
+
+
+###Análise inferencial:
+Será calculado:
+- coeficientes (mostram a relação entre variáveis; então, se mudam, a interpretação muda)
+- erro padrão (o quanto o modelo erra, em média)
+- R2 (qualidade do modelo; então, se muda para menor, o modelo explica menos os dados)
+
+Calcula-se da seguinte forma:
+```{r}
+# modelos de cada simulação
+modelo_equipment <- lm(valueadded ~ capital + labor, data = equipment)
+modelo_mcar <- lm(valueadded ~ capital + labor, data = equip_mcar)
+modelo_mar <- lm(valueadded ~ capital + labor, data = equip_mar)
+modelo_mnar <- lm(valueadded ~ capital + labor, data = equip_mnar)
+
+# coeficiente da var. capital
+analises <- rbind(analises, data.frame(
+  operacao = "coef_capital",
+  equipment = round(coef(modelo_equipment)[2], 4),
+  equip_mcar = round(coef(modelo_mcar)[2], 4),
+  equip_mar = round(coef(modelo_mar)[2], 4),
+  equip_mnar = round(coef(modelo_mnar)[2], 4)
+))
+
+# coeficiente da var. labor
+analises <- rbind(analises, data.frame(
+  operacao = "coef_labor",
+  equipment = round(coef(modelo_equipment)[3], 4),
+  equip_mcar = round(coef(modelo_mcar)[3], 4),
+  equip_mar = round(coef(modelo_mar)[3], 4),
+  equip_mnar = round(coef(modelo_mnar)[3], 4)
+))
+
+
+# R2
+analises <- rbind(analises, data.frame(
+  operacao = "r_quadrado",
+  equipment = round(summary(modelo_equipment)$r.squared, 4),
+  equip_mcar = round(summary(modelo_mcar)$r.squared, 4),
+  equip_mar = round(summary(modelo_mar)$r.squared, 4),
+  equip_mnar = round(summary(modelo_mnar)$r.squared, 4)
+))
+
+# erro padrão ajustado
+analises <- rbind(analises, data.frame(
+  operacao = "erro_padrao_ajustado",
+  equipment = round(sd(equipment$valueadded, na.rm = T) / sqrt(sum(!is.na(equipment$valueadded))), 4),
+  equip_mcar = round(sd(equip_mcar$valueadded, na.rm = T) / sqrt(sum(!is.na(equip_mcar$valueadded))), 4),
+  equip_mar = round(sd(equip_mar$valueadded, na.rm = T) / sqrt(sum(!is.na(equip_mar$valueadded))), 4),
+  equip_mnar = round(sd(equip_mnar$valueadded, na.rm = T) / sqrt(sum(!is.na(equip_mnar$valueadded))), 4)
+))
+
+View(analises)
+```
+
+
+##Análises estruturais:
+Será calculado:
+
+- proporção dos dados faltantes (sabe quanto foi perdido)
+- tamanho da amostra (desconsiderando os valores NA)
+
+Calcula-se da seguinte forma:
+```{r}
+# proporção de dados faltantes
+analises <- rbind(analises, data.frame(
+  operacao = "prop_NA",
+  equipment = round(sum(is.na(equipment$valueadded)) / length(equipment$valueadded), 4),
+  equip_mcar = round(sum(is.na(equip_mcar$valueadded)) / length(equip_mcar$valueadded), 4),
+  equip_mar = round(sum(is.na(equip_mar$valueadded)) / length(equip_mar$valueadded), 4),
+  equip_mnar = round(sum(is.na(equip_mnar$valueadded)) / length(equip_mnar$valueadded), 4)
+))
+
+# número de observações eliminando os valores NA
+analises <- rbind(analises, data.frame(
+  operacao = "n_alterado",
+  equipment = round(sum(!is.na(equipment$valueadded)), 4),
+  equip_mcar = round(sum(!is.na(equip_mcar$valueadded)), 4),
+  equip_mar = round(sum(!is.na(equip_mar$valueadded)), 4),
+  equip_mnar = round(sum(!is.na(equip_mnar$valueadded)), 4)
+))
+
+View(analises)
+```
+
+
+##Cálculo de viés:
+Com os parâmetros calculados, analisa-se tanto o viés absoluto quanto o viés relativo, permitindo avaliar simultaneamente o impacto em termos absolutos e proporcionais das estimativas:
+```{r}
+analises <- analises %>% 
+  mutate(
+    vies_mcar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round(equip_mcar - equipment, 4),
+      TRUE ~ NA_real_
+    ),
+    vies_rel_mcar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round((equip_mcar - equipment) / equipment, 4),
+      TRUE ~ NA_real_
+    ),
+    vies_mar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round(equip_mar - equipment, 4),
+      TRUE ~ NA_real_
+    ),
+    vies_rel_mar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round((equip_mar - equipment) / equipment, 4),
+      TRUE ~ NA_real_
+    ),
+    vies_mnar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round(equip_mnar - equipment, 4),
+      TRUE ~ NA_real_
+    ),
+    vies_rel_mnar = case_when(
+      !(operacao %in% c("prop_NA", "n_alterado")) ~ round((equip_mnar - equipment) / equipment, 4),
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  relocate(vies_mcar, .after = equip_mcar) %>%
+  relocate(vies_mar, .after = equip_mar) %>%
+  relocate(vies_mnar, .after = equip_mnar) %>% 
+  relocate(vies_rel_mcar, .after = vies_mcar) %>%
+  relocate(vies_rel_mar, .after = vies_mar) %>%
+  relocate(vies_rel_mnar, .after = vies_mnar)
+
+row.names(analises) <- c(1:10)
+
+View(analises)
+```
+
+###Análises das distribuições e densidade das bases de dados:
+
+```{r}
+hist_equipment <- ggplot() +
+  geom_histogram(data = equipment, aes(x = valueadded, fill = "equipment"), alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = "blue") +
+  labs(title = "Distribuição do valueadded da base equipment",
+       x = "valueadded",
+       y = "Frequência",
+       fill = "Base") + 
+  theme_minimal()
+
+hist_equipment
+
+ggsave("hist_equipment.png", hist_equipment, width = 10, height = 8, dpi = 300)
+```
+
+
+```{r}
+hist_equip_mcar <- ggplot() +
+  geom_histogram(data = equip_mcar, aes(x = valueadded, fill = "equip_mcar"), alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = "red") +
+  labs(title = "Distribuição do valueadded da base equip_mcar",
+       x = "valueadded",
+       y = "Frequência",
+       fill = "Base") + 
+  theme_minimal()
+
+hist_equip_mcar
+
+ggsave("hist_equip_mcar.png", hist_equip_mcar, width = 10, height = 8, dpi = 300)
+```
+
+
+```{r}
+hist_equip_mar <- ggplot() +
+  geom_histogram(data = equip_mar, aes(x = valueadded, fill = "equip_mar"),  alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = "green") +
+  labs(title = "Distribuição do valueadded da base equip_mar",
+       x = "valueadded",
+       y = "Frequência",
+       fill = "Base") +
+  theme_minimal()
+
+ggsave("hist_equip_mar.png", hist_equip_mar, width = 10, height = 8, dpi = 300)
+```
+
+
+```{r}
+hist_equip_mnar <- ggplot() +
+  geom_histogram(data = equip_mnar, aes(x = valueadded, fill = "equip_mnar"),  alpha = 0.5, bins = 30) +
+  scale_fill_manual(values = "purple") +
+  labs(title = "Distribuição do valueadded da base equip_mnar",
+       x = "valueadded",
+       y = "Frequência",
+       fill = "Base") +
+  theme_minimal()
+
+ggsave("hist_equip_mnar.png", hist_equip_mnar, width = 10, height = 8, dpi = 300)
+```
+
+
+```{r}
+dens_comparacao <- ggplot() +
+  geom_density(data = equipment, aes(x = valueadded, color = "equipment", fill = "equipment"), alpha = 0.3) +
+  geom_density(data = equip_mcar, aes(x = valueadded, color = "equip_mcar", fill = "equip_mcar"), alpha = 0.3) + 
+  geom_density(data = equip_mar, aes(x = valueadded, color = "equip_mar", fill = "equip_mar"), alpha = 0.3) +
+  geom_density(data = equip_mnar, aes(x = valueadded, color = "equip_mnar", fill = "equip_mnar"), alpha = 0.3) +
+  scale_color_manual(values = c("equipment" = "blue", 
+                                 "equip_mcar" = "red", 
+                                 "equip_mar" = "green", 
+                                 "equip_mnar" = "purple")) +
+  scale_fill_manual(values = c("equipment" = "blue", 
+                                "equip_mcar" = "red", 
+                                "equip_mar" = "green", 
+                                "equip_mnar" = "purple")) +
+  labs(title = "Densidade do valueadded por base",
+       x = "valueadded",
+       y = "Densidade",
+       color = "Base",
+       fill = "Base") +
+  theme_minimal()
+
+ggsave("dens_comparacao.png", dens_comparacao, width = 10, height = 8, dpi = 300)
+```
+
+###Resultado:
+Por meio das medidas dos vieses das operações relevantes (media, mediana, desvio padrão, correlação, coeficientes de capital, coeficientes de labor, R2), isto é, com viés medível e interpretável, foram apresentados os seguintes resultados:
+
+###Média e mediana:
+É possível verificar que o MCAR produz diferença, mas é menor que o do MAR, que é  menor que do MNAR (distorção MCAR < MAR < MNAR). Em outras palavras, MAR e MNAR distorcem fortemente o centro dos dados, enquanto MCAR apresenta impacto menor (mas não nulo na amostra).
+
+###Desvio padrão (variabilidade dos dados):
+Similarmente, MCAR apresentou mudanças, mas muito menor que as do MAR e MNAR, que aumentaram muito a variabilidade, indicando perda de estrutura e instabilidade dos dados
+
+###Correlação:
+No MCAR, a correlação é praticamente observada (diferença de 0.0044). No entanto, MAR já altera, piorando em MNAR. Conclui-se que a estrutura de relação entre variáveis é degradada principalmente em MAR e MNAR.
+
+###Regressão (coeficientes):
+Enquanto as mudanças em MCAR, MAR e MNAR são leves/moderadas nos coeficientes da variavel labor, na variável capital, MAR e MNAR mudam muito o efeito do capital (MCAR muda levemente), o que é bastante crítico. Isso porque MAR e MNAR afetam diretamente a interpretação econômica/estatística do modelo.
+
+###R2 (qualidade do modelo):
+Diferentemente do visto na regressão por meio do coeficiente da var. capital, mesmo com viés nos coeficientes, o R2 não muda tanto em MCAR, MAR e MNAR, que sofreram leves distorções.
+
+###Erro padrão ajustado:
+O erro padrão mede a confiança nos resultados. Nesse caso, calculamos o erro padrão ajustado que, além de ser uma medida de incerteza da estimativa (como o erro padrão), é levado em conta apenas os dados que não estão faltando. Assim, com menos dados, espera-se que menor seja o resultado do erro padrão ajustado. Isso ocorre, por exemplo, no caso da base de dados MCAR, em que, como possui menos dados que a base origiral (equipment). No entanto, o contrário ocorre com as bases MAR e MNAR, que mesmo com menos observações não faltantes, apresentou uma melhora nos resultados do erro padrão ajustado. Em tese, um menor erro representa um cenário positivo, já que a incerteza em menor. Porém, essa diminuição não reflete melhora na precisão, já que é redução artificial causada pela ausência de observações. Esse resultado evidencia um cenário de falsa precisão, no qual estimativas enviesadas são acompanhadas por níveis aparentemente baixos de incerteza.
+
+
+##Conclusão:
+Os resultados mostram que o impacto dos dados faltantes depende fortemente do seu mecanismo de geração. Observa-se um padrão claro em que a distorção aumenta de MCAR para MAR e MNAR.
+
+O MCAR apresentou menor viés, preservando melhor as características dos dados, enquanto MAR e MNAR causaram distorções relevantes nas medidas descritivas, na variabilidade e nas relações entre variáveis. Esses efeitos foram especialmente críticos nos coeficientes de regressão, indicando risco de interpretações equivocadas.
+
+Além disso, a relativa estabilidade do R2 evidencia que um bom ajuste do modelo não garante ausência de viés.
+
+Assim, conclui-se que identificar e tratar corretamente o mecanismo de dados faltantes é essencial para garantir a validade das análises estatísticas.
+
+
+##Referências bibliográficas:
+
+- BUUREN, Stef van. Flexible Imputation of Missing Data. 2. ed. Boca Raton: CRC Press, 2018. Acesso em: 4 mar. 2026.
+
+- POSIT TEAM. RStudio: Integrated Development Environment for R. Boston: Posit Software, PBC, 2026. Disponível em: http://www.posit.co/. Acesso em: 22 mar. 2026.
+
+- WARING, Elin et al. skimr: Compact and Flexible Summaries of Data. Versão 2.2.2, 2026. Disponível em: https://docs.ropensci.org/skimr/. Acesso em: 22 mar. 2026.
+
+- WICKHAM, Hadley et al. Welcome to the tidyverse. Journal of Open Source Software, v. 4, n. 43, p. 1686, 2019. DOI: 10.21105/joss.01686. Disponível em: https://joss.theoj.org/papers/10.21105/joss.01686. Acesso em: 22 mar. 2026.
+
+- ZELLNER, Arnold; RYU, Hang. Alternative Functional Forms for Production, Cost, and Returns to Scale Functions. Journal of Applied Econometrics, v. 13, n. 2, p. 101-127, 1998. Acesso em: 22 mar. 2026.
